@@ -18,6 +18,19 @@ services:
       # DB at $DATA_DIR/bibliogon.db, uploads at $DATA_DIR/uploads/,
       # both inside the named volume.
       - BIBLIOGON_DATA_DIR=/app/data
+      - CLOUDMIST_GPT_KEY=${CLOUDMIST_GPT_KEY:-}
+      - CLOUDMIST_CLAUDE_KEY=${CLOUDMIST_CLAUDE_KEY:-}
+      - CLOUDMIST_QWEN_KEY=${CLOUDMIST_QWEN_KEY:-}
+      - CLOUDMIST_DOUBAO_KEY=${CLOUDMIST_DOUBAO_KEY:-}
+      - DASHSCOPE_API_KEY=${DASHSCOPE_API_KEY:-}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      # Ollama runs on the host (127.0.0.1:11434) but bind loopback only;
+      # inside this container 127.0.0.1 is the container's own loopback so we
+      # must route via host.docker.internal (Docker Desktop for Windows
+      # resolves this to the host gateway). Verified 2026-08-24:
+      # `curl http://host.docker.internal:11434/api/tags` returns qwen3:8b.
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
 
   frontend:
     image: node:24-slim

@@ -123,6 +123,9 @@ async def chat_completion(req: ChatRequest) -> dict[str, Any]:
         )
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as exc:  # noqa: BLE001 - Patch 005: 兜底任何意外，避免裸 500
+        logger.exception("Patch 005: unexpected exception in /ai/chat")
+        raise HTTPException(status_code=503, detail={"error": "llm_unexpected", "message": str(exc), "exc_type": type(exc).__name__}) from exc
 
 
 @router.post("/generate")
@@ -146,6 +149,9 @@ async def generate_text(req: GenerateRequest) -> dict[str, Any]:
         return {"content": result["content"], "usage": usage}
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as exc:  # noqa: BLE001 - Patch 005: 兜底任何意外，避免裸 500
+        logger.exception("Patch 005: unexpected exception in /ai/generate")
+        raise HTTPException(status_code=503, detail={"error": "llm_unexpected", "message": str(exc), "exc_type": type(exc).__name__}) from exc
 
 
 @router.get("/models")
@@ -223,6 +229,9 @@ async def review_chapter(req: ReviewRequest) -> dict[str, Any]:
         }
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as exc:  # noqa: BLE001 - Patch 005: 兜底任何意外，避免裸 500
+        logger.exception("Patch 005: unexpected exception in /ai/review")
+        raise HTTPException(status_code=503, detail={"error": "llm_unexpected", "message": str(exc), "exc_type": type(exc).__name__}) from exc
 
 
 class MarketingRequest(BaseModel):
@@ -337,6 +346,9 @@ async def generate_marketing(req: MarketingRequest) -> dict[str, Any]:
         }
     except LLMError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    except Exception as exc:  # noqa: BLE001 - Patch 005: 兜底任何意外，避免裸 500
+        logger.exception("Patch 005: unexpected exception in /ai/generate-marketing")
+        raise HTTPException(status_code=503, detail={"error": "llm_unexpected", "message": str(exc), "exc_type": type(exc).__name__}) from exc
 
 
 @router.get("/test-connection")

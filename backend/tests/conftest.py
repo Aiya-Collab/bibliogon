@@ -91,6 +91,13 @@ if _THIS_CONFTEST.parent.parent.name == "mutants":
 os.environ["BIBLIOGON_TEST"] = "1"
 os.environ.setdefault("TEST_DATABASE_URL", "sqlite:///:memory:")
 
+# H 卡验收修复项 #3：清理 WorkBuddy 客户端注入的超长 env var，避免 mock.patch.dict
+# 退出时 os.putenv 触发 Windows 32KB 限制。WorkBuddy 注入 ACC_PRODUCT_CONFIG_V3=480KB+
+# 等测试无关变量。测试运行无需这些变量。
+for _polluter in ("ACC_PRODUCT_CONFIG_V3",):
+    if _polluter in os.environ and len(os.environ[_polluter]) > 32_000:
+        os.environ.pop(_polluter, None)
+
 # Filesystem isolation: redirect every ``get_upload_dir()`` resolution
 # into a process-scoped tmp dir. The session fixture below upgrades
 # this to a tmp_path_factory-managed directory so pytest's own
