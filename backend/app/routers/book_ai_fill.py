@@ -36,6 +36,7 @@ from app.ai.template_schema import (
     extract_body_text,
 )
 from app.database import get_db
+from app.deps.auth import require_author_write
 from app.models import Book
 from app.routers.book_ai_template import reconcile_chapter_summaries
 
@@ -337,6 +338,7 @@ async def ai_fill_book(
     book_id: str,
     request: _AiFillRequest,
     db: Session = Depends(get_db),
+    _author=Depends(require_author_write),
 ) -> dict[str, Any]:
     """Run the configured LLM against the book and fill the
     requested field-classes. Per-class failure is isolated."""

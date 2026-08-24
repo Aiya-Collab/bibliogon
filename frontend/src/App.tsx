@@ -9,6 +9,7 @@ import Settings from "./pages/Settings";
 import Help from "./pages/Help";
 import GetStarted from "./pages/GetStarted";
 import NotFoundPage from "./pages/NotFoundPage";
+import DistillationPage from "./pages/DistillationPage";
 // Dialog->Pages migration: new full-page surfaces are lazy-loaded so
 // they create their own chunks (the rest of the routes stay eager).
 // lazyWithReload (not bare React.lazy) recovers from stale-shell
@@ -207,6 +208,7 @@ export default function App() {
                                                             </ErrorBoundary>
                                                         }
                                                     />
+                                                    <Route path="/distill/:bookId" element={<DistillationPage />} />
                                                     <Route
                                                         path="/books/:bookId/export"
                                                         element={

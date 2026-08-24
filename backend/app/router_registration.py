@@ -45,6 +45,11 @@ from app.routers import (
     pages,
     plugin_install,
     publications,
+    project_tree,
+    canon,
+    ai_agents,
+    distillation,
+    revisions,
     settings,
     system,
     templates,
@@ -93,6 +98,12 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(publications.publications_router, prefix="/api")
     app.include_router(publications.platform_schemas_router, prefix="/api")
     app.include_router(chapters.router, prefix="/api")
+    app.include_router(project_tree.router, prefix="/api")
+    app.include_router(project_tree.references_router, prefix="/api")
+    app.include_router(revisions.router, prefix="/api")
+    app.include_router(canon.router, prefix="/api")
+    app.include_router(ai_agents.router, prefix="/api")
+    app.include_router(distillation.router, prefix="/api")
     app.include_router(chapter_labels.router, prefix="/api")
     app.include_router(writing_stats.router, prefix="/api")
     app.include_router(pages.router, prefix="/api")

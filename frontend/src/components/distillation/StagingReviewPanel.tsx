@@ -1,0 +1,2 @@
+import type { StagingArtifact } from "../../api/distillation";
+export default function StagingReviewPanel({ items, onAdopt, onReject }: { items: StagingArtifact[]; onAdopt: (id:string)=>void; onReject:(id:string)=>void }) { return <section><h2>Staging 审核</h2>{items.map(x=><article key={x.id}><strong>{x.title}</strong><pre>{JSON.stringify(x.payload,null,2)}</pre>{x.status === "candidate" ? <><button onClick={()=>onAdopt(x.id)}>采纳进正史</button><button onClick={()=>onReject(x.id)}>拒绝</button></> : <span>{x.status} {x.canonical_id}</span>}</article>)}</section>; }

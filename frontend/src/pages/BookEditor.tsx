@@ -9,6 +9,7 @@ import StoryBibleSidebar from "../components/story-bible/StoryBibleSidebar";
 import StoryEntityEditor from "../components/story-bible/StoryEntityEditor";
 import ProseStoryboard from "../components/story-bible/ProseStoryboard";
 import ChapterOutliner from "../components/book/ChapterOutliner";
+import ProjectOutline from "../components/book/ProjectOutline";
 import RelationshipGraphView from "../components/story-bible/RelationshipGraphView";
 import { useBookTypes } from "../hooks/book/useBookTypes";
 import Editor from "../components/editor/Editor";
@@ -34,6 +35,7 @@ import { EmptyState } from "../lib/components/EmptyState";
 import { LoadingIndicator } from "../components/shared/LoadingIndicator";
 import styles from "./BookEditor.module.css";
 import { renderPageBasedEditor } from "./bookEditorDispatch";
+import DistillButton from "../components/distillation/DistillButton";
 
 export default function BookEditor() {
     const { bookId } = useParams<{ bookId: string }>();
@@ -68,6 +70,8 @@ export default function BookEditor() {
     const [selectedStoryEntityId, setSelectedStoryEntityId] = useState<string | null>(null);
     const [storyBibleRefreshKey, setStoryBibleRefreshKey] = useState(0);
     const [showSaveTemplate, setShowSaveTemplate] = useState(false);
+    const [showProjectOutline, setShowProjectOutline] = useState(false);
+    const [referenceJump, setReferenceJump] = useState<{ chapterId: string; paragraphIndex: number; seq: number } | null>(null);
     const [showChapterTemplatePicker, setShowChapterTemplatePicker] = useState(false);
     const [saveChapterTemplateId, setSaveChapterTemplateId] = useState<string | null>(null);
     const {
@@ -331,7 +335,24 @@ export default function BookEditor() {
             </div>
 
             <main id="main-content" className={`${styles.content} ${sidebarOpen ? "" : "pl-14"}`}>
-                {selectedStoryEntityId ? (
+                {bookId && <DistillButton bookId={bookId} />}
+                {!showProjectOutline && (
+                    <button className="btn btn-ghost btn-sm" onClick={() => setShowProjectOutline(true)} data-testid="book-editor-project-outline">
+                        Project Outline
+                    </button>
+                )}
+                {showProjectOutline ? (
+                    <ProjectOutline
+                        bookId={book.id}
+                        chapters={book.chapters.map((chapter) => ({ id: chapter.id, title: chapter.title }))}
+                        onBack={() => setShowProjectOutline(false)}
+                        onReferenceNavigate={(chapterId, paragraphIndex) => {
+                            setReferenceJump((previous) => ({ chapterId, paragraphIndex, seq: (previous?.seq ?? 0) + 1 }));
+                            selectChapter(chapterId);
+                            setShowProjectOutline(false);
+                        }}
+                    />
+                ) : selectedStoryEntityId ? (
                     <StoryEntityEditor
                         key={selectedStoryEntityId}
                         entityId={selectedStoryEntityId}
@@ -413,6 +434,11 @@ export default function BookEditor() {
                         initialFocus={
                             pendingFocus && pendingFocus.chapterId === activeChapterMeta.id
                                 ? { type: pendingFocus.type, seq: pendingFocus.seq }
+                                : undefined
+                        }
+                        initialParagraphIndex={
+                            referenceJump && referenceJump.chapterId === activeChapterMeta.id
+                                ? { index: referenceJump.paragraphIndex, seq: referenceJump.seq }
                                 : undefined
                         }
                         mentionBookId={storyBibleAvailable ? bookId : undefined}

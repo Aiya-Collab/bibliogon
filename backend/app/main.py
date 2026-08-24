@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import sys
@@ -313,6 +314,12 @@ async def lifespan(app: FastAPI):
 
     mark_data_dir_as_production()
     init_db()
+    # AI generation is opt-in; enabled mode fails early without the
+    # required environment-only provider key.
+    from app.config.ai_settings import get_ai_settings
+    if get_ai_settings().ai_generation_enabled:
+        from app.services.llm.provider_factory import get_llm_provider
+        get_llm_provider()
     # Auto-delete expired trash items on startup
     from app.routers.articles import cleanup_expired_article_trash
     from app.routers.books import cleanup_expired_trash
@@ -373,8 +380,15 @@ async def lifespan(app: FastAPI):
     discovery_result = manager.discover_plugins()
     manager.mount_routes(app)
     _log_discovery_result(discovery_result)
+    from app.services.project_reference_worker import run_daily_reference_scan
+    reference_scan_task = asyncio.create_task(run_daily_reference_scan())
 
     yield
+    reference_scan_task.cancel()
+    try:
+        await reference_scan_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Shutting down Bibliogon")
     manager.deactivate_all()
 
@@ -415,6 +429,11 @@ app.add_middleware(
 )
 
 register_routers(app)
+
+# Phase F Patch 004: install canonical error envelope handler so ApiError
+# responses sit at body top-level (not wrapped in FastAPI "detail" envelope).
+from app.services.errors import register_exception_handler as _register_error_handler
+_register_error_handler(app)
 
 
 # Domain + catch-all exception handlers (see app.exception_handlers).

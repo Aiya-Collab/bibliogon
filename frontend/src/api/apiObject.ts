@@ -3,6 +3,7 @@ import { articlesApi } from "./articles";
 import { chaptersApi } from "./chapters";
 import { mediaApi } from "./media";
 import { platformApi } from "./platform";
+import { projectTreeApi } from "./projectTree";
 
 /**
  * The single typed API client surface. Assembled by spreading the
@@ -16,4 +17,5 @@ export const api = {
   ...chaptersApi,
   ...mediaApi,
   ...platformApi,
+  ...projectTreeApi,
 };

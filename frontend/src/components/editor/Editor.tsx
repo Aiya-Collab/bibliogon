@@ -110,6 +110,8 @@ interface Props {
      *  the jump even when chapter did not change. Set by BookEditor in
      *  response to a Quality-tab click. */
     initialFocus?: { type: string; seq: number };
+    /** A project-tree Reference target: scroll to the zero-based prose paragraph. */
+    initialParagraphIndex?: { index: number; seq: number };
     /** When set, enables Story Bible @-mention autocomplete scoped to
      *  this book (STORY-BIBLE C13). BookEditor passes the bookId only
      *  when plugin-story-bible is active. */
@@ -138,6 +140,7 @@ export default function Editor({
     draftMaxAgeDays = 30,
     aiContextChars = 2000,
     initialFocus,
+    initialParagraphIndex,
     mentionBookId,
     onOpenStoryEntity,
 }: Props) {
@@ -327,6 +330,15 @@ export default function Editor({
             },
         },
     });
+
+    useEffect(() => {
+        if (!editor || !initialParagraphIndex) return;
+        const paragraphs = editor.view.dom.querySelectorAll("p");
+        const target = paragraphs.item(initialParagraphIndex.index) as HTMLElement | null;
+        if (!target) return;
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.focus?.();
+    }, [editor, initialParagraphIndex?.index, initialParagraphIndex?.seq]);
 
     // COMPOSITION-DISTRACTION-FREE-MODE-01 C2: typewriter scrolling —
     // keep the caret line vertically centered while in composition
