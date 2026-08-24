@@ -69,7 +69,6 @@ def get_distillation_provider_by_name(provider_name: str, settings):
     This intentionally coexists with the legacy settings-based selector.
     """
     name = (provider_name or "").lower()
-    # Preserve the historical default: auto starts with the local Ollama route.
     if name == "auto":
         name = "ollama"
     if name == "ollama":

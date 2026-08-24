@@ -14,3 +14,7 @@ async def choose_provider(settings: AISettings):
     if await local.is_available(): return local
     from app.services.llm.provider_factory import get_llm_provider
     return get_llm_provider()
+
+
+def distillation_context_metadata(settings: AISettings) -> dict[str, int]:
+    return {"num_ctx_used": settings.distillation_chunk_chars}

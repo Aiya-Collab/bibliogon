@@ -1,7 +1,7 @@
 import hashlib, json
 from datetime import UTC, datetime
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +12,8 @@ from app.config.ai_settings import get_ai_settings
 from app.services.distillation.parser import parse_text
 from app.services.llm.provider_factory import get_distillation_provider_by_name
 from app.services.llm.base import Message
+from app.database import SessionLocal
+from app.services.distillation.orchestrator import distillation_context_metadata
 from app.services.errors import ErrorCode, raise_api_error, classify_provider_error, ApiError
 
 router = APIRouter(prefix="/distillation", tags=["distillation"])
@@ -23,6 +25,28 @@ DISTILLATION_TO_OUTLINE_NODE = "outline"
 OUTLINE_TREE_TYPE = "manuscript"
 OUTLINE_NODE_TYPE = "chapter"
 ENTITY_ARTIFACT_TYPES = frozenset({"character", "setting", "plot", "item", "lore"})
+
+
+def _process_distillation_run(run_id, book_id, parsed, settings, provider_name):
+    db = SessionLocal()
+    run = db.get(DistillationRun, run_id)
+    try:
+        provider = get_distillation_provider_by_name(provider_name, settings)
+        prompt = {"filename": parsed.source_filename, "chapters": [{"title": c.title, "text": c.text[:settings.distillation_chunk_chars]} for c in parsed.chapters[:settings.distillation_max_blocks]]}
+        import asyncio
+        response = asyncio.run(provider.chat([Message("system", "Extract structure only; never reproduce source prose."), Message("user", json.dumps(prompt, ensure_ascii=False))]))
+        if not (response.content or "").strip():
+            raise RuntimeError("empty provider response")
+        run.status = "succeeded"; run.finished_at = datetime.now(UTC); run.provider_used = provider.get_provider_name(); run.model_used = provider.get_model_name()
+        run.result_counts = {"outline": len(parsed.chapters), **distillation_context_metadata(settings)}
+        run.prompt_hash = hashlib.sha256(json.dumps(prompt, ensure_ascii=False).encode()).hexdigest(); run.response_hash = hashlib.sha256(response.content.encode()).hexdigest()
+        for chapter in parsed.chapters:
+            db.add(DistillationArtifact(run_id=run.id, book_id=book_id, artifact_type="outline", title=chapter.title, payload={"chapter_index": chapter.index, "char_count": len(chapter.text)}, status="candidate", distillation_source="auto", created_by_role="ai"))
+        db.commit()
+    except Exception as exc:
+        run.status = "failed"; run.error_message = str(exc)[:2000]; run.finished_at = datetime.now(UTC); db.commit()
+    finally:
+        db.close()
 
 
 def _adopt_into_canon(artifact: DistillationArtifact, db: Session) -> str:
@@ -65,6 +89,8 @@ async def start(
     file: UploadFile = File(...),
     distillation_provider: Optional[str] = Query(None, description="覆盖默认 distillation_provider（ollama/cloudmist/auto）"),
     model: Optional[str] = Query(None, description="覆盖默认 model"),
+    async_mode: bool = Query(False, alias="async"),
+    background_tasks: BackgroundTasks = None,
     user: User = Depends(require_author),
     db: Session = Depends(get_db),
 ):
@@ -85,6 +111,12 @@ async def start(
         settings = type(settings)(**{**settings.__dict__, "distillation_provider": distillation_provider})
     if model:
         settings = type(settings)(**{**settings.__dict__, "ollama_model": model})
+
+    if async_mode:
+        run = DistillationRun(book_id=book_id, user_id=user.id, source_format=parsed.source_format, source_filename=parsed.source_filename, source_hash=hashlib.sha256(parsed.raw_text.encode()).hexdigest(), total_chars=len(parsed.raw_text), total_chapters=len(parsed.chapters), provider_used=distillation_provider or settings.distillation_provider, model_used=model or settings.ollama_model, status="pending", result_counts=distillation_context_metadata(settings), prompt_hash="0" * 64, response_hash="0" * 64)
+        db.add(run); db.commit(); db.refresh(run)
+        background_tasks.add_task(_process_distillation_run, run.id, book_id, parsed, settings, distillation_provider or settings.distillation_provider)
+        return {"distillation_run_id": run.id, "status": "pending", "provider_used": run.provider_used, "model_used": run.model_used, "artifact_count": 0}
 
     # ---- Phase F Patch 004: try/except wrap the WHOLE provider lifecycle ----
     # Patch 003 only wrapped the factory call; this version wraps everything
@@ -151,7 +183,7 @@ async def start(
         model_used=provider.get_model_name(),
         status="succeeded",
         finished_at=datetime.now(UTC),
-        result_counts={"outline": len(parsed.chapters)},
+        result_counts={"outline": len(parsed.chapters), **distillation_context_metadata(settings)},
         prompt_hash=hashlib.sha256(json.dumps(prompt, ensure_ascii=False).encode()).hexdigest(),
         response_hash=hashlib.sha256(response.content.encode()).hexdigest(),
     )

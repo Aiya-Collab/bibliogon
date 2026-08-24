@@ -16,7 +16,8 @@ class AISettings:
     ollama_model: str = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen3:8b"))
     ollama_timeout_s: int = 600
     ollama_max_retries: int = 2
-    distillation_chunk_chars: int = 8000
+    # Keep prompts within the default qwen3:8b 8K context window.
+    distillation_chunk_chars: int = 2000
     distillation_overlap_chars: int = 200
     distillation_max_blocks: int = 24
     auto_adopt_distillation: bool = False

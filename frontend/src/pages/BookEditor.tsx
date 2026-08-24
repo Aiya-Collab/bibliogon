@@ -35,6 +35,7 @@ import { EmptyState } from "../lib/components/EmptyState";
 import { LoadingIndicator } from "../components/shared/LoadingIndicator";
 import styles from "./BookEditor.module.css";
 import { renderPageBasedEditor } from "./bookEditorDispatch";
+import DistillButton from "../components/distillation/DistillButton";
 
 export default function BookEditor() {
     const { bookId } = useParams<{ bookId: string }>();
@@ -334,6 +335,7 @@ export default function BookEditor() {
             </div>
 
             <main id="main-content" className={`${styles.content} ${sidebarOpen ? "" : "pl-14"}`}>
+                {bookId && <DistillButton bookId={bookId} />}
                 {!showProjectOutline && (
                     <button className="btn btn-ghost btn-sm" onClick={() => setShowProjectOutline(true)} data-testid="book-editor-project-outline">
                         Project Outline
