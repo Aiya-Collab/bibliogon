@@ -27,14 +27,16 @@ OUTLINE_NODE_TYPE = "chapter"
 ENTITY_ARTIFACT_TYPES = frozenset({"character", "setting", "plot", "item", "lore"})
 
 
-def _process_distillation_run(run_id, book_id, parsed, settings, provider_name):
+async def _process_distillation_run(run_id, book_id, parsed, settings, provider_name):
     db = SessionLocal()
     run = db.get(DistillationRun, run_id)
     try:
         provider = get_distillation_provider_by_name(provider_name, settings)
         prompt = {"filename": parsed.source_filename, "chapters": [{"title": c.title, "text": c.text[:settings.distillation_chunk_chars]} for c in parsed.chapters[:settings.distillation_max_blocks]]}
-        import asyncio
-        response = asyncio.run(provider.chat([Message("system", "Extract structure only; never reproduce source prose."), Message("user", json.dumps(prompt, ensure_ascii=False))]))
+        response = await provider.chat([
+            Message("system", "Extract structure only; never reproduce source prose."),
+            Message("user", json.dumps(prompt, ensure_ascii=False)),
+        ])
         if not (response.content or "").strip():
             raise RuntimeError("empty provider response")
         run.status = "succeeded"; run.finished_at = datetime.now(UTC); run.provider_used = provider.get_provider_name(); run.model_used = provider.get_model_name()
