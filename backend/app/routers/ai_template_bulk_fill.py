@@ -56,6 +56,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.template_schema import extract_body_text
 from app.database import get_db
+from app.deps.auth import require_author_write
 from app.job_store import job_store
 from app.models import Article, Book
 from app.routers.article_ai_fill import _FIELD_CLASSES as _ARTICLE_FIELD_CLASSES
@@ -337,7 +338,7 @@ def get_article_bulk_fill_job(job_id: str) -> dict[str, Any]:
 
 @books_router.post("/estimate")
 def estimate_book_bulk_fill(
-    request: _BulkFillRequest, db: Session = Depends(get_db)
+    request: _BulkFillRequest, db: Session = Depends(get_db), _author=Depends(require_author_write)
 ) -> dict[str, Any]:
     _enforce_bulk_ai_fill_cap(len(request.ids))
     _validate_book_field_classes(request.field_classes)
@@ -377,7 +378,7 @@ def estimate_book_bulk_fill(
 
 @books_router.post("/start", response_model=_BulkFillStartResponse)
 async def start_book_bulk_fill(
-    request: _BulkFillRequest, db: Session = Depends(get_db)
+    request: _BulkFillRequest, db: Session = Depends(get_db), _author=Depends(require_author_write)
 ) -> _BulkFillStartResponse:
     from app.ai.routes import _is_ai_enabled
 

@@ -20,6 +20,7 @@ from app.schemas import (
 from app.services.chapter_snapshots import line_diff, snapshot_plain_text
 from app.services.toc_validation import validate_book_toc
 from app.services.writing_stats import count_words, record_progress
+from app.services.project_references import resolve_chapter_references
 
 # Retention: keep at most the last N AUTOMATIC snapshots per chapter.
 # Manual (named) snapshots are exempt - they survive until the user
@@ -128,6 +129,8 @@ def update_chapter(
         )
 
     repo.commit_refresh(chapter)
+    if "content" in updates:
+        resolve_chapter_references(db, chapter.id, chapter.content)
     repo.trim_auto_versions(chapter.id, VERSION_RETENTION)
 
     return chapter
