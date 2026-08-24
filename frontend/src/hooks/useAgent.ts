@@ -1,0 +1,3 @@
+import { useCallback, useState } from "react";
+import { agentsApi, type AgentBody, type AgentRole } from "../api/agents";
+export function useAgent<T = unknown>({ role, action, body, aiRunId }: { role: AgentRole; action: string; body: AgentBody; aiRunId: string }) { const [data,setData]=useState<T>(); const [error,setError]=useState<unknown>(); const [loading,setLoading]=useState(false); const run=useCallback(async()=>{setLoading(true);setError(undefined);for(let i=0;i<4;i++){try{const out=await agentsApi.run<T>(role,action,body,aiRunId);setData(out);return out;}catch(e){setError(e);if(i===3)throw e;await new Promise(r=>setTimeout(r,1000*2**i));}}finally{setLoading(false);}},[role,action,body,aiRunId]); return {data,error,loading,retry:run}; }

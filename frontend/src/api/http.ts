@@ -75,8 +75,9 @@ export async function request<T>(
   const endpoint = `${BASE}${path}`.split("?")[0]; // strip query for recorder
   let res: Response;
   try {
+    const isMultipart = typeof FormData !== "undefined" && options?.body instanceof FormData;
     res = await guardedFetch(`${BASE}${path}`, {
-      headers: { "Content-Type": "application/json" },
+      ...(isMultipart ? {} : { headers: { "Content-Type": "application/json" } }),
       ...options,
     });
   } catch (networkError) {
