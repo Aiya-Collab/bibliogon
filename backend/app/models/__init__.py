@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -1412,6 +1413,62 @@ class StoryEntityPageLink(Base):
         )
 
 
+class ProjectNode(Base):
+    """A book-scoped node in one of the five novel-workbench trees."""
+
+    __tablename__ = "project_nodes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    book_id: Mapped[str] = mapped_column(ForeignKey("books.id", ondelete="CASCADE"), nullable=False)
+    tree_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    parent_id: Mapped[str | None] = mapped_column(
+        ForeignKey("project_nodes.id", ondelete="CASCADE"), nullable=True
+    )
+    node_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ref_chapter_id: Mapped[str | None] = mapped_column(
+        ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True
+    )
+    ref_target_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+
+    __table_args__ = (
+        Index("ix_project_nodes_book_tree_parent_position", "book_id", "tree_type", "parent_id", "position"),
+        # SQLite permits several NULLs, while enforcing the C-0.1 L3 link uniqueness.
+        Index("uq_project_nodes_manuscript_chapter", "book_id", "ref_chapter_id", unique=True,
+              sqlite_where=text("tree_type = 'manuscript' AND node_type = 'chapter' AND ref_chapter_id IS NOT NULL")),
+    )
+
+
+class ProjectNodeReference(Base):
+    __tablename__ = "project_node_references"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    source_node_id: Mapped[str] = mapped_column(ForeignKey("project_nodes.id", ondelete="CASCADE"), nullable=False)
+    target_node_id: Mapped[str] = mapped_column(ForeignKey("project_nodes.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class Reference(Base):
+    """A resilient scene-to-prose anchor, maintained after chapter saves."""
+
+    __tablename__ = "references"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    heading_node_id: Mapped[str] = mapped_column(ForeignKey("project_nodes.id", ondelete="CASCADE"), nullable=False, unique=True)
+    chapter_id: Mapped[str] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
+    anchor_before: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    anchor_at: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    anchor_after: Mapped[str] = mapped_column(String(60), nullable=False, default="")
+    para_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="valid")
+    candidate_positions: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class BookPublishingState(Base):
     """KDP Publishing Wizard Phase 2 — per-book commercial state.
 
@@ -1548,3 +1605,185 @@ class ArcReviewer(Base):
             f"publishing_state_id={self.publishing_state_id!r} "
             f"name={self.reviewer_name!r} status={self.review_status!r}>"
         )
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    username: Mapped[str] = mapped_column(String(200), unique=True, nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="author", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class AiRun(Base):
+    __tablename__ = "ai_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    provider: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class Revision(Base):
+    __tablename__ = "revision_revisions"
+    __table_args__ = (
+        Index("uq_revision_active_per_chapter", "chapter_id", unique=True, sqlite_where=text("status = 'active'")),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    chapter_id: Mapped[str] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    parent_revision_id: Mapped[str | None] = mapped_column(ForeignKey("revision_revisions.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="candidate", index=True)
+    created_by_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    created_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    ai_run_id: Mapped[str | None] = mapped_column(ForeignKey("ai_runs.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class RevisionEvidence(Base):
+    __tablename__ = "revision_evidence"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    revision_id: Mapped[str] = mapped_column(ForeignKey("revision_revisions.id", ondelete="CASCADE"), nullable=False)
+    reviewed_content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    reviewer_role: Mapped[str] = mapped_column(String(16), nullable=False)
+    reviewer_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_refs: Mapped[dict | list | None] = mapped_column(JSON, nullable=True)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class RevisionPublishLog(Base):
+    __tablename__ = "revision_publish_log"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    chapter_id: Mapped[str] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
+    published_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    old_active_revision_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    new_active_revision_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    evidence_id: Mapped[str] = mapped_column(ForeignKey("revision_evidence.id"), nullable=False)
+
+
+class CanonDelta(Base):
+    __tablename__ = "canon_delta"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    chapter_id: Mapped[str] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_revision_id: Mapped[str] = mapped_column(ForeignKey("revision_revisions.id", ondelete="CASCADE"), nullable=False)
+    source_evidence_id: Mapped[str | None] = mapped_column(ForeignKey("revision_evidence.id"), nullable=True)
+    fact_key: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    fact_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="proposed", index=True)
+    proposed_by_role: Mapped[str] = mapped_column(String(16), nullable=False, default="author")
+    proposed_by_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    ai_run_id: Mapped[str | None] = mapped_column(ForeignKey("ai_runs.id"), nullable=True)
+    proposed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    superseded_by_delta_id: Mapped[str | None] = mapped_column(ForeignKey("canon_delta.id"), nullable=True)
+
+
+class Canon(Base):
+    __tablename__ = "canon"
+    __table_args__ = (
+        Index("uq_canon_active_fact", "chapter_id", "fact_key", unique=True,
+              sqlite_where=text("rolled_back_at IS NULL")),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    chapter_id: Mapped[str] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
+    active_delta_id: Mapped[str] = mapped_column(ForeignKey("canon_delta.id", ondelete="CASCADE"), nullable=False, unique=True)
+    fact_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    fact_payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    accepted_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    rolled_back_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AcceptanceReceipt(Base):
+    __tablename__ = "acceptance_receipt"
+    __table_args__ = (Index("uq_acceptance_delta_decision", "delta_id", "decision", unique=True),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    delta_id: Mapped[str] = mapped_column(ForeignKey("canon_delta.id", ondelete="CASCADE"), nullable=False)
+    decision: Mapped[str] = mapped_column(String(16), nullable=False)
+    reviewer_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    criteria_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    source_revision_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_evidence_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    reviewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class RollbackReceipt(Base):
+    __tablename__ = "rollback_receipt"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    chapter_id: Mapped[str] = mapped_column(ForeignKey("chapters.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_log_id: Mapped[str | None] = mapped_column(ForeignKey("revision_publish_log.id"), nullable=True)
+    target_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rolled_back_by_user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rolled_back_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    affected_publish_log_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    affected_canon_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    affected_receipt_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+
+class AiRunLog(Base):
+    __tablename__ = "ai_run_log"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    ai_run_id: Mapped[str] = mapped_column(ForeignKey("ai_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    agent_role: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    chapter_id: Mapped[str | None] = mapped_column(ForeignKey("chapters.id", ondelete="SET NULL"), nullable=True, index=True)
+    prompt_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    provider_config_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+
+class DistillationRun(Base):
+    __tablename__ = "distillation_run"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    book_id: Mapped[str] = mapped_column(ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    source_format: Mapped[str] = mapped_column(String(16), nullable=False)
+    source_filename: Mapped[str] = mapped_column(String(512), nullable=False)
+    source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    total_chars: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_chapters: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider_used: Mapped[str] = mapped_column(String(32), nullable=False)
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_counts: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class DistillationArtifact(Base):
+    __tablename__ = "distillation_artifact"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_new_id)
+    run_id: Mapped[str] = mapped_column(ForeignKey("distillation_run.id", ondelete="CASCADE"), nullable=False, index=True)
+    book_id: Mapped[str] = mapped_column(ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="candidate")
+    distillation_source: Mapped[str] = mapped_column(String(16), nullable=False, default="auto")
+    created_by_role: Mapped[str] = mapped_column(String(16), nullable=False, default="ai")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
