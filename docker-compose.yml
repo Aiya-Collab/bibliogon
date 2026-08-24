@@ -4,6 +4,7 @@ name: bibliogon
 
 services:
   backend:
+    restart: always
     build:
       context: .
       dockerfile: backend/Dockerfile

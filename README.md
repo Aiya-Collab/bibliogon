@@ -300,6 +300,16 @@ Environment variables (set in `.env` or shell):
 
 ## Related Projects
 
+## Ollama 常驻守护（Patch 008）
+
+宿主重启后 Ollama 必须自动恢复，否则蒸馏会出现连接失败。任选一种方式配置：
+
+- **系统托盘**：打开 Ollama Settings，勾选 `Launch on startup`。
+- **Windows 任务计划程序**：`taskschd.msc` 创建“登录时”任务，执行 `ollama serve`。
+- **启动文件夹**：运行 `shell:startup`，放置执行 `ollama serve` 的快捷方式。
+
+验证：`curl -s -m 5 http://localhost:11434/api/tags` 应返回 HTTP 200，并在 `models` 中包含 `qwen3:8b`。
+
 - [pluginforge](https://github.com/astrapi69/pluginforge) - Plugin framework (PyPI)
 - [manuscripta](https://github.com/astrapi69/manuscripta) - Book export pipeline with TTS adapter layer (PyPI)
 - [write-book-template](https://github.com/astrapi69/write-book-template) - Target directory structure for export
