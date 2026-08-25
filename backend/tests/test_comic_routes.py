@@ -36,14 +36,6 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 
-# patch 009 emergency-fix: 全文件依赖 libgobject / weasyprint GTK runtime
-# 缺失。后续 patch 010 收口 module-level → class-level(TestComicBookExportDispatch)
-# 精确化,放行 11 个 CRUD class。
-pytestmark = pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="WeasyPrint/libgobject GTK runtime 缺失,patch 010 修复",
-)
-
 
 @pytest.fixture
 def client() -> TestClient:
@@ -685,6 +677,13 @@ def shared_client():
 
 
 class TestComicBookExportDispatch:
+    # patch 009 (min-fix): 仅本类依赖 libgobject / weasyprint,其他
+    # 11 个 CRUD class(panel/bubble CRUD + 边界校验)不依赖,正常运行。
+    pytestmark = pytest.mark.skipif(
+        sys.platform == "win32",
+        reason="WeasyPrint/libgobject GTK runtime 缺失,patch 010 修复",
+    )
+
     """Pins the comic_book branch of plugin-export's ``export()``
     route. The dispatch site reads ``Book.book_type`` and branches
     to ``_export_comic_book_pdf`` which lazy-imports the
