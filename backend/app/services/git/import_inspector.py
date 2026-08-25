@@ -269,18 +269,25 @@ def _scan_security(git_dir: Path) -> list[str]:  # noqa: C901  # Legacy, tracked
             pass
 
     # Custom hooks.
+    # patch 009: 不再依赖 st_mode & 0o111 作为可执行位判定。Windows 上
+    # chmod(0o755) 不设 x 位,导致所有 hook 都被漏判。改为"非 .sample
+    # + 非 _DEFAULT_HOOK_NAMES + 文件大小 > 0"作为检测条件 ——
+    # git init 创建的默认钩子是 .sample 形式或零字节,任何有内容的钩子
+    # 都是用户安装的。
     hooks_dir = git_dir / "hooks"
     if hooks_dir.is_dir():
         for entry in hooks_dir.iterdir():
             if not entry.is_file():
                 continue
+            if entry.name.endswith(".sample"):
+                continue
             if entry.name in _DEFAULT_HOOK_NAMES:
                 continue
             try:
-                executable = entry.stat().st_mode & 0o111
+                has_content = entry.stat().st_size > 0
             except OSError:
-                executable = 0
-            if executable:
+                has_content = False
+            if has_content:
                 warnings.append("Custom git hooks detected (will NOT be adopted).")
                 break
 

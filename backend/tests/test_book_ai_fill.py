@@ -30,7 +30,25 @@ from app.main import app
 
 @pytest.fixture
 def client() -> TestClient:
-    with TestClient(app) as c:
+    """patch 009: auto-create author user and inject X-User-Id
+    header so require_author_write lets the request through.
+
+    Pre-patch behaviour: this fixture returned a bare TestClient
+    which produced 401 on every ai-fill call because the route
+    depends on require_author_write (X-User-Id + role=author).
+    17 tests in this file were pre-existing fails for that single
+    root cause.
+    """
+    from app.database import SessionLocal
+    from app.models import User
+
+    db = SessionLocal()
+    user = User(username="patch009-book-ai-fill-author", role="author")
+    db.add(user)
+    db.commit()
+    user_id = user.id
+    db.close()
+    with TestClient(app, headers={"X-User-Id": user_id}) as c:
         yield c
 
 

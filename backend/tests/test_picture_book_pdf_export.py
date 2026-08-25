@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import shutil
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,6 +36,13 @@ _TINY_PNG = (
     b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89"
     b"\x00\x00\x00\rIDATx\x9cc\xfc\xcf\xc0\xf0\x9f\x01\x00\x05\x00\x01\xa5\xf6E\xa5"
     b"\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+# patch 009: Libgobject GTK runtime 缺失,patch 010 用 reportlab 替换 weasyprint。
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Libgobject GTK runtime 缺失,patch 010 修复",
 )
 
 

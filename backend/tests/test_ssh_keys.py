@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import stat
+import sys
 
 import pytest
 from fastapi.testclient import TestClient
@@ -46,6 +47,10 @@ def test_generate_creates_keypair():
     assert ssh_keys.public_key_path().is_file()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Windows chmod 0600 实际生效为 0666 (mode=438),Unix-only 测试",
+)
 def test_generate_private_key_is_0600():
     client.post("/api/ssh/generate", json={})
     mode = stat.S_IMODE(ssh_keys.private_key_path().stat().st_mode)

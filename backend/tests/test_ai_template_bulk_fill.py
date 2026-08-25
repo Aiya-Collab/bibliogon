@@ -40,7 +40,18 @@ from app.main import app
 
 @pytest.fixture
 def client() -> TestClient:
-    with TestClient(app) as c:
+    """patch 009: auto-create author user and inject X-User-Id
+    header so require_author_write lets the request through."""
+    from app.database import SessionLocal
+    from app.models import User
+
+    db = SessionLocal()
+    user = User(username="patch009-ai-template-bulk-fill-author", role="author")
+    db.add(user)
+    db.commit()
+    user_id = user.id
+    db.close()
+    with TestClient(app, headers={"X-User-Id": user_id}) as c:
         yield c
 
 

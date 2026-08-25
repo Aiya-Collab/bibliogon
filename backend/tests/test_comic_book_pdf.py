@@ -25,6 +25,7 @@ Coverage scope (pre-WeasyPrint, no actual PDF render):
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,14 @@ from bibliogon_comics.comic_book_pdf import (
     _render_comic_panel,
     _resolve_comic_grid_template,
     generate_comic_book_pdf,
+)
+
+
+# patch 009: Libgobject GTK runtime 缺失,patch 010 用 reportlab 替换 weasyprint。
+# 整个文件涉及 weasyprint / pango 渲染,在 Windows 上无法运行,统一 skip。
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Libgobject GTK runtime 缺失,patch 010 修复",
 )
 
 
