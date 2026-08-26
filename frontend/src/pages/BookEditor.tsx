@@ -36,6 +36,7 @@ import { LoadingIndicator } from "../components/shared/LoadingIndicator";
 import styles from "./BookEditor.module.css";
 import { renderPageBasedEditor } from "./bookEditorDispatch";
 import DistillButton from "../components/distillation/DistillButton";
+import AIDistillPanel from "../components/AIDistillPanel";
 
 export default function BookEditor() {
     const { bookId } = useParams<{ bookId: string }>();
@@ -74,6 +75,21 @@ export default function BookEditor() {
     const [referenceJump, setReferenceJump] = useState<{ chapterId: string; paragraphIndex: number; seq: number } | null>(null);
     const [showChapterTemplatePicker, setShowChapterTemplatePicker] = useState(false);
     const [saveChapterTemplateId, setSaveChapterTemplateId] = useState<string | null>(null);
+    // PHASE-G-FRONTEND-AI-INTEGRATION: the right-side "AI 蒸馏" drawer.
+    // Open is local state (a chapter-level affordance, not a URL-bound
+    // view); aiRunId is read from localStorage so the AI gateway
+    // config persists across reloads. When the gateway has never been
+    // initialised locally the panel disables itself and surfaces a
+    // friendly error rather than letting the user click a dead button.
+    const [aiDistillOpen, setAiDistillOpen] = useState(false);
+    const [aiRunId] = useState<string | undefined>(() => {
+        if (typeof window === "undefined") return undefined;
+        try {
+            return window.localStorage.getItem("bibliogon.ai_run_id") ?? undefined;
+        } catch {
+            return undefined;
+        }
+    });
     const {
         showMetadata,
         showStoryboard,
@@ -409,48 +425,66 @@ export default function BookEditor() {
                 ) : activeChapterMeta &&
                   loadedContent?.id === activeChapterMeta.id &&
                   !contentLoading ? (
-                    <Editor
-                        key={activeChapterMeta.id}
-                        content={loadedContent.content}
-                        onSave={handleSaveContent}
-                        bookId={bookId}
-                        chapterId={activeChapterMeta.id}
-                        chapterTitle={activeChapterMeta.title}
-                        chapterType={activeChapterMeta.chapter_type}
-                        chapterVersion={activeChapterMeta.version}
-                        targetWords={activeChapterMeta.target_words}
-                        bookContext={{
-                            title: book.title,
-                            author: book.author || "",
-                            language: book.language || "de",
-                            genre: book.genre || "",
-                            description: book.description || "",
-                        }}
-                        placeholder={`Schreibe "${activeChapterMeta.title}"...`}
-                        autosaveDebounceMs={editorSettings.autosave_debounce_ms}
-                        draftSaveDebounceMs={editorSettings.draft_save_debounce_ms}
-                        draftMaxAgeDays={editorSettings.draft_max_age_days}
-                        aiContextChars={editorSettings.ai_context_chars}
-                        initialFocus={
-                            pendingFocus && pendingFocus.chapterId === activeChapterMeta.id
-                                ? { type: pendingFocus.type, seq: pendingFocus.seq }
-                                : undefined
-                        }
-                        initialParagraphIndex={
-                            referenceJump && referenceJump.chapterId === activeChapterMeta.id
-                                ? { index: referenceJump.paragraphIndex, seq: referenceJump.seq }
-                                : undefined
-                        }
-                        mentionBookId={storyBibleAvailable ? bookId : undefined}
-                        onOpenStoryEntity={
-                            storyBibleAvailable
-                                ? (entityId) => {
-                                      setSelectedStoryEntityId(entityId);
-                                      openStoryBibleExclusive();
-                                  }
-                                : undefined
-                        }
-                    />
+                    <>
+                        <div
+                            className="flex items-center justify-end gap-2 px-2 py-1 text-xs text-[var(--text-muted)]"
+                            data-testid="book-editor-chapter-toolbar"
+                        >
+                            <span className="truncate" title={activeChapterMeta.title}>
+                                {activeChapterMeta.title}
+                            </span>
+                            <button
+                                type="button"
+                                className="px-3 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                onClick={() => setAiDistillOpen(true)}
+                                data-testid="ai-distill-button"
+                            >
+                                AI 蒸馏
+                            </button>
+                        </div>
+                        <Editor
+                            key={activeChapterMeta.id}
+                            content={loadedContent.content}
+                            onSave={handleSaveContent}
+                            bookId={bookId}
+                            chapterId={activeChapterMeta.id}
+                            chapterTitle={activeChapterMeta.title}
+                            chapterType={activeChapterMeta.chapter_type}
+                            chapterVersion={activeChapterMeta.version}
+                            targetWords={activeChapterMeta.target_words}
+                            bookContext={{
+                                title: book.title,
+                                author: book.author || "",
+                                language: book.language || "de",
+                                genre: book.genre || "",
+                                description: book.description || "",
+                            }}
+                            placeholder={`Schreibe "${activeChapterMeta.title}"...`}
+                            autosaveDebounceMs={editorSettings.autosave_debounce_ms}
+                            draftSaveDebounceMs={editorSettings.draft_save_debounce_ms}
+                            draftMaxAgeDays={editorSettings.draft_max_age_days}
+                            aiContextChars={editorSettings.ai_context_chars}
+                            initialFocus={
+                                pendingFocus && pendingFocus.chapterId === activeChapterMeta.id
+                                    ? { type: pendingFocus.type, seq: pendingFocus.seq }
+                                    : undefined
+                            }
+                            initialParagraphIndex={
+                                referenceJump && referenceJump.chapterId === activeChapterMeta.id
+                                    ? { index: referenceJump.paragraphIndex, seq: referenceJump.seq }
+                                    : undefined
+                            }
+                            mentionBookId={storyBibleAvailable ? bookId : undefined}
+                            onOpenStoryEntity={
+                                storyBibleAvailable
+                                    ? (entityId) => {
+                                          setSelectedStoryEntityId(entityId);
+                                          openStoryBibleExclusive();
+                                      }
+                                    : undefined
+                            }
+                        />
+                    </>
                 ) : activeChapterMeta && contentLoading ? (
                     <LoadingIndicator
                         testId="book-editor-content-loading"
@@ -532,6 +566,24 @@ export default function BookEditor() {
                 onDiscardLocal={resolveConflictDiscardLocal}
                 onSaveAsNewChapter={resolveConflictSaveAsNew}
             />
+            {activeChapterMeta && bookId && (
+                <AIDistillPanel
+                    open={aiDistillOpen}
+                    onClose={() => setAiDistillOpen(false)}
+                    bookId={bookId}
+                    chapterId={activeChapterMeta.id}
+                    chapterTitle={activeChapterMeta.title}
+                    chapterVersion={activeChapterMeta.version}
+                    aiRunId={aiRunId}
+                    onPublished={() => {
+                        // Refresh the loaded content so the editor picks up the new body.
+                        void getStorage()
+                            .chapters.get(bookId, activeChapterMeta.id, true)
+                            .then(() => undefined)
+                            .catch(() => undefined);
+                    }}
+                />
+            )}
         </div>
     );
 }
