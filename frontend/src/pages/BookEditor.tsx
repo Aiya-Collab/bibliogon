@@ -578,7 +578,7 @@ export default function BookEditor() {
                     onPublished={() => {
                         // Refresh the loaded content so the editor picks up the new body.
                         void getStorage()
-                            .chapters.get(bookId, activeChapterMeta.id, true)
+                            .chapters.get(bookId, activeChapterMeta.id)
                             .then(() => undefined)
                             .catch(() => undefined);
                     }}
