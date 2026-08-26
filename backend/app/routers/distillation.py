@@ -1,7 +1,7 @@
 import hashlib, json
 from datetime import UTC, datetime
 from typing import Optional
-from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Response, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -251,3 +251,72 @@ def reject(artifact_id: str, user: User = Depends(require_author), db: Session =
     row.status = "rejected"
     db.commit()
     return {"id": row.id, "status": row.status}
+
+
+# ----------------------------------------------------------------------------
+# patch-014: export endpoint
+# GET /api/distillation/books/{book_id}/export?format=json|md
+# - format=json: JSON 列表(UTF-8, application/json)
+# - format=md  : Markdown 按 artifact_type 分组(UTF-8, text/markdown)
+# - book 不存在 → 404 envelope(BOOK_NOT_FOUND)
+# - format 非法 → 400 envelope
+# - 未鉴权    → 401(require_author)
+# ----------------------------------------------------------------------------
+_EXPORT_FORMATS = ("json", "md")
+
+
+@router.get("/books/{book_id}/export")
+def export_artifacts(
+    book_id: str,
+    format: str = Query(..., description="导出格式:json | md"),
+    user: User = Depends(require_author),
+    db: Session = Depends(get_db),
+):
+    if format not in _EXPORT_FORMATS:
+        raise_api_error(
+            ErrorCode.INVALID_MODEL,
+            message=f"不支持的 format: {format}",
+            context={"field": "format", "requested": format, "supported": list(_EXPORT_FORMATS)},
+        )
+    if db.get(Book, book_id) is None:
+        raise_api_error(ErrorCode.BOOK_NOT_FOUND, message=f"未找到 book_id={book_id}")
+
+    rows = list(
+        db.scalars(
+            select(DistillationArtifact)
+            .where(DistillationArtifact.book_id == book_id)
+            .order_by(DistillationArtifact.artifact_type, DistillationArtifact.created_at)
+        ).all()
+    )
+
+    if format == "json":
+        payload = [
+            {
+                "id": r.id,
+                "artifact_type": r.artifact_type,
+                "title": r.title,
+                "payload": r.payload,
+                "status": r.status,
+                "canonical_id": (r.payload.get("canonical_id") if isinstance(r.payload, dict) else None),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+        body = json.dumps(payload, ensure_ascii=False, indent=2)
+        return Response(content=body, media_type="application/json; charset=utf-8")
+
+    # format == "md":按 artifact_type 分组,每个 type 一个 # 标题
+    grouped: dict = {}
+    for r in rows:
+        grouped.setdefault(r.artifact_type, []).append(r)
+    md_lines: list = [f"# Distillation export · book_id={book_id}", ""]
+    for artifact_type, items in grouped.items():
+        md_lines.append(f"# {artifact_type}")
+        md_lines.append("")
+        for r in items:
+            payload_json = json.dumps(r.payload or {}, ensure_ascii=False)
+            md_lines.append(f"- **{r.title}** (status: {r.status}, id: {r.id})")
+            md_lines.append(f"  - payload: {payload_json}")
+        md_lines.append("")
+    body = "\n".join(md_lines)
+    return Response(content=body, media_type="text/markdown; charset=utf-8")
