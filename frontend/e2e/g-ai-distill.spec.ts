@@ -329,4 +329,79 @@ test.describe("Phase G — Frontend real-AI integration", () => {
             timeout: 15_000,
         });
     });
+
+    test("AI disabled 403 surfaces envelope code", async ({page, request}) => {
+        // ---- Patch 010: 验证 AI 角色被禁 403 envelope 错误能透传到 UI ----
+        page.on("pageerror", (error) => console.log(`browser-error: ${error.message}`));
+
+        // Seed book + chapter via direct backend calls (mirrors test #1 setup).
+        const book = await post<{ id: string }>(request, "/books", {
+            title: "Phase G AI disabled workspace",
+            author: "e2e",
+        });
+        await post<{ id: string }>(request, `/books/${book.id}/chapters`, {
+            title: "AI disabled chapter",
+            content: "Body to be distilled.",
+        });
+
+        // Pre-stage AI gateway identity in localStorage so the panel knows the
+        // run id is set. Real backend would still gate on the user's role,
+        // but here we test the UI's envelope-error surface.
+        await page.addInitScript(() => {
+            window.localStorage.setItem("bibliogon.ai_run_id", "test-run-ai-disabled");
+        });
+
+        // Override the drafting endpoint with a 403 envelope. The reviewer
+        // route is NOT mocked here because the panel aborts after the first
+        // failure (G1 error stage), so G2 reviewer never fires.
+        // The body shape matches the backend envelope convention: the
+        // structured dict lives under the top-level `detail` key, so
+        // `http.ts` parses `err.detail` as a dict and exposes it through
+        // `ApiError.detailBody` for `extractErrorCode`.
+        await page.route("**/api/ai/agents/drafting/generate", async (route) => {
+            await route.fulfill({
+                status: 403,
+                contentType: "application/json",
+                body: JSON.stringify({
+                    detail: {
+                        error: "ai_disabled",
+                        message: "AI role forbidden for this user",
+                        code: "ai_disabled",
+                        retryable: false,
+                        hint: "",
+                    },
+                }),
+            });
+        });
+
+        await page.goto(`/book/${book.id}`);
+        await closeOnboardingIfPresent(page);
+
+        const chapterLink = page
+            .getByRole("button", { name: /AI disabled chapter/i })
+            .first();
+        if (await chapterLink.count()) {
+            await chapterLink.click();
+        }
+
+        await expect(page.getByTestId("ai-distill-button")).toBeVisible({
+            timeout: 15_000,
+        });
+        await page.getByTestId("ai-distill-button").click();
+        const startBtn3 = page.getByTestId("ai-distill-start");
+        await expect(startBtn3).toBeVisible({ timeout: 5_000 });
+        await startBtn3.click();
+
+        // The error stage renders an envelope code pulled from the 403 body.
+        await expect(page.getByTestId("ai-distill-error")).toBeVisible({
+            timeout: 15_000,
+        });
+        await expect(page.getByTestId("ai-distill-error")).toContainText(/ai_disabled/);
+
+        // Optional evidence screenshot — surfaces the envelope-error UI.
+        await page.screenshot({
+            path: "e2e/screenshots/g-ai-distill-ai-403.png",
+            fullPage: true,
+        });
+    });
 });
