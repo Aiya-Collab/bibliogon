@@ -253,6 +253,100 @@ def reject(artifact_id: str, user: User = Depends(require_author), db: Session =
     return {"id": row.id, "status": row.status}
 
 
+# ====================================================================
+# Phase H Patch 013: batch adopt-all endpoint
+# H-R1 走作者显式采纳路径（_adopt_into_canon 内置 type 校验，不破正史门禁）
+# H-R2 原子事务：db.begin_nested() savepoint + 任何失败 rollback（不允许半采纳）
+# H-R3 鉴权严格：require_author，不接受任何角色绕过
+# H-R4 兼容现有：append-only，不动现有 5 端点任何代码
+# H-R5 backend 零外溢：不动 alembic 迁移 / 蒸馏 prompt / provider 实现
+# ====================================================================
+class _AdoptAllBody(BaseModel):
+    artifact_ids: list[str] = []
+
+
+@router.post("/staging/adopt-all")
+def adopt_all(
+    body: _AdoptAllBody,
+    user: User = Depends(require_author),
+    db: Session = Depends(get_db),
+):
+    """批量采纳 staging artifacts。
+
+    - 空列表: 200, {adopted: [], failed: []}
+    - 全部成功: 201, {adopted: [{id, artifact_type, canonical_id}], failed: []}
+    - 预校验失败(任意 id 不存在或 status != candidate): 422 + STAGING_NOT_FOUND envelope
+    - 事务循环失败: 422 + STAGING_NOT_FOUND envelope + 已全部回滚(DB 无新行)
+    """
+    # 局部 import:不污染模块顶部 imports,保持现有 5 端点 import 顺序零改动
+    from fastapi.responses import JSONResponse
+    from app.services.errors import build_error
+
+    if not body.artifact_ids:
+        return JSONResponse(status_code=200, content={"adopted": [], "failed": []})
+
+    # ---- 预校验:全部 artifact_ids 必须存在且 status=candidate ----
+    rows = []
+    for art_id in body.artifact_ids:
+        row = db.get(DistillationArtifact, art_id)
+        if row is None or row.status != "candidate":
+            envelope = build_error(
+                ErrorCode.STAGING_NOT_FOUND,
+                message=f"adopt-all 预校验失败:artifact_id={art_id} 不存在或 status != candidate",
+                context={"artifact_ids": body.artifact_ids, "missing_or_non_candidate": art_id},
+            )
+            return JSONResponse(status_code=422, content=envelope)
+        rows.append(row)
+
+    # ---- 事务循环:db.begin_nested() savepoint ----
+    adopted: list[dict] = []
+    savepoint = db.begin_nested()
+    try:
+        for row in rows:
+            canonical_id = _adopt_into_canon(row, db)
+            payload = dict(row.payload) if isinstance(row.payload, dict) else {}
+            payload["canonical_id"] = canonical_id
+            row.payload = payload
+            row.status = "adopted"
+            adopted.append({"id": row.id, "artifact_type": row.artifact_type, "canonical_id": canonical_id})
+    except ApiError as api_err:
+        # H-R2:立即回滚整个 savepoint,不允许半采纳状态
+        savepoint.rollback()
+        envelope = build_error(
+            ErrorCode.STAGING_NOT_FOUND,
+            message=f"adopt-all 事务失败,已全部回滚:{api_err.body['error']['message']}",
+            detail=str(api_err),
+            context={
+                "adopted": [],  # 不允许半采纳状态
+                "failed": [{"id": r.id, "reason": api_err.body["error"]["message"]} for r in rows],
+                "attempted_artifact_ids": [r.id for r in rows],
+                "rollback": True,
+            },
+        )
+        return JSONResponse(status_code=422, content=envelope)
+    except Exception as exc:
+        savepoint.rollback()
+        envelope = build_error(
+            ErrorCode.STAGING_NOT_FOUND,
+            message=f"adopt-all 事务失败,已全部回滚:{type(exc).__name__}",
+            detail=str(exc)[:500],
+            context={
+                "adopted": [],  # 不允许半采纳状态
+                "failed": [{"id": r.id, "reason": str(exc)[:200]} for r in rows],
+                "attempted_artifact_ids": [r.id for r in rows],
+                "rollback": True,
+            },
+        )
+        return JSONResponse(status_code=422, content=envelope)
+    else:
+        # 全部成功,显式提交 savepoint(释放,后续 db.commit() 持久化)
+        savepoint.commit()
+
+    db.commit()
+    # 全部成功:201
+    return JSONResponse(status_code=201, content={"adopted": adopted, "failed": []})
+
+
 # ----------------------------------------------------------------------------
 # patch-014: export endpoint
 # GET /api/distillation/books/{book_id}/export?format=json|md
